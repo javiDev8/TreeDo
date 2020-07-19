@@ -23,24 +23,27 @@ export default class Item extends Component {
     }
 
     add = () => {
-        db.transaction(tx =>
-            tx.executeSql(
-                `insert into items (
-			parentId,
-			textContent
-		    ) values (?,?)`,
-                [this.props.id, this.state.newItemTextContent],
-                (_, result) =>
-                    this.setState({
-                        id: result.insertId,
-                        parentId: this.props.id,
-                        textContent: this.state.newItemTextContent,
-                    }),
-                (_, error) => console.log('error on insert: ', error)
-            )
-        ),
+        db.transaction(
+            tx =>
+                tx.executeSql(
+                    `insert into items (
+		    parentId,
+		    textContent
+		) values (?,?)`,
+                    [this.props.id, this.state.newItemTextContent],
+                    (_, result) =>
+                        this.setState({
+                            children: this.state.children.concat({
+                                id: result.insertId,
+                                parentId: this.props.id,
+                                textContent: this.state.newItemTextContent,
+                            }),
+                        }),
+                    (_, error) => console.log('error on insert: ', error)
+                ),
             null,
             () => this.setState({ showInput: false, newItemTextContent: '' })
+        )
     }
 
     fetchChildren = () => {
@@ -65,6 +68,37 @@ export default class Item extends Component {
         )
     }
 
+    open = () => {
+        db.transaction(
+            tx =>
+                tx.executeSql(
+                    'update items set open = 1 where id = ?',
+                    [this.props.id],
+                    null,
+                    null
+                ),
+            null,
+            () => {
+                this.setState({ open: true })
+                this.fetchChildren()
+            }
+        )
+    }
+
+    close = () => {
+        db.transaction(
+            tx =>
+                tx.executeSql(
+                    'update items set open = 0 where id = ?',
+                    [this.props.id],
+                    null,
+                    null
+                ),
+            null,
+            () => this.setState({ open: false })
+        )
+    }
+
     render() {
         return (
             <View>
@@ -77,8 +111,15 @@ export default class Item extends Component {
                 ) : null}
 
                 <Swipeable
-                    renderLeftActions={() => <Text>left</Text>}
-                    onSwipeableWillOpen={() => this.setState({ open: true })}
+                    renderLeftActions={() => (
+                        <TouchableOpacity
+                            onPress={() => this.setState({ showInput: true })}
+                        >
+                            <Text>+ </Text>
+                        </TouchableOpacity>
+                    )}
+                    onSwipeableWillOpen={this.open}
+                    onSwipeableWillClose={this.close}
                 >
                     <Text>{this.state.textContent || null}</Text>
                 </Swipeable>
