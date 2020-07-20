@@ -3,6 +3,7 @@ import { TextInput, CheckBox, Text, View, TouchableOpacity } from 'react-native'
 import Swipeable from 'react-native-gesture-handler/Swipeable'
 
 import db from './database'
+import downRecursive from './downRecursive'
 
 export default class Item extends Component {
     state = {
@@ -24,7 +25,7 @@ export default class Item extends Component {
 
     add = () => {
         db.transaction(
-            tx =>
+            tx => {
                 tx.executeSql(
                     `insert into items (
 		    parentId,
@@ -40,10 +41,28 @@ export default class Item extends Component {
                             }),
                         }),
                     (_, error) => console.log('error on insert: ', error)
-                ),
+                )
+                tx.executeSql(
+                    'update items set childrenAmount = ? where id = ?',
+                    [this.state.childrenAmount + 1, this.props.id],
+                    null,
+                    (_, error) =>
+                        console.log('error on +1 childrenAmount: ', error)
+                )
+            },
             null,
-            () => this.setState({ showInput: false, newItemTextContent: '' })
+            () =>
+                this.setState({
+                    showInput: false,
+                    newItemTextContent: '',
+                    childrenAmount: this.state.childrenAmount + 1,
+                })
         )
+    }
+
+    remove = () => {
+        downRecursive(this.props.id, 'delete from items where id = ?')
+        this.props.updateParent()
     }
 
     fetchChildren = () => {
@@ -53,49 +72,22 @@ export default class Item extends Component {
                     'select * from items where parentId = ?',
                     [this.props.id],
                     (_, { rows }) => {
+                        console.log('match on fetch: ', rows._array)
                         this.setState({
                             children: rows._array.map(item => {
                                 item.done = item.done === 1 ? true : false
-                                item.open = item.open === 1 ? true : false
                                 return item
                             }),
+                            // childrenAmount: rows._array.length,
                         })
                     },
-                    null
-                )
-            // null,
-            // () => console.log('children after fetch: ', this.state.children)
-        )
-    }
-
-    open = () => {
-        db.transaction(
-            tx =>
-                tx.executeSql(
-                    'update items set open = 1 where id = ?',
-                    [this.props.id],
-                    null,
                     null
                 ),
             null,
             () => {
                 this.setState({ open: true })
-                this.fetchChildren()
+                console.log('state after fetch: ', this.state)
             }
-        )
-    }
-
-    close = () => {
-        db.transaction(
-            tx =>
-                tx.executeSql(
-                    'update items set open = 0 where id = ?',
-                    [this.props.id],
-                    null,
-                    null
-                ),
-            null,
-            () => this.setState({ open: false })
         )
     }
 
@@ -108,21 +100,38 @@ export default class Item extends Component {
                     >
                         <Text>add root task</Text>
                     </TouchableOpacity>
-                ) : null}
-
-                <Swipeable
-                    renderLeftActions={() => (
-                        <TouchableOpacity
-                            onPress={() => this.setState({ showInput: true })}
-                        >
-                            <Text>+ </Text>
-                        </TouchableOpacity>
-                    )}
-                    onSwipeableWillOpen={this.open}
-                    onSwipeableWillClose={this.close}
-                >
-                    <Text>{this.state.textContent || null}</Text>
-                </Swipeable>
+                ) : (
+                    <Swipeable
+                        renderLeftActions={() => (
+                            <TouchableOpacity
+                                onPress={() =>
+                                    this.setState({ showInput: true })
+                                }
+                            >
+                                <Text>+ </Text>
+                            </TouchableOpacity>
+                        )}
+                        renderRightActions={() => (
+                            <TouchableOpacity onPress={this.remove}>
+                                <Text>X</Text>
+                            </TouchableOpacity>
+                        )}
+                        onSwipeableWillOpen={this.fetchChildren}
+                        onSwipeableWillClose={() =>
+                            this.setState({ open: false })
+                        }
+                    >
+                        <View style={{ flexDirection: 'row' }}>
+                            {this.state.childrenAmount > 0 ? null : (
+                                <CheckBox />
+                            )}
+                            <Text>
+                                {(this.state.textContent || null) +
+                                    ` (${this.state.childrenAmount})`}
+                            </Text>
+                        </View>
+                    </Swipeable>
+                )}
 
                 {this.state.open ? (
                     <View style={{ paddingLeft: 20 }}>
@@ -134,6 +143,7 @@ export default class Item extends Component {
                                     data={item}
                                     id={item.id}
                                     parentId={this.props.id}
+                                    updateParent={this.fetchChildren}
                                 />
                             ))}
 

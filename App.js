@@ -15,7 +15,6 @@ export default class App extends Component {
 		    parentId integer,
 		    textContent text,
 		    done integer default 0,
-		    open integer default 0,
 		    childrenAmount integer default 0,
 		    doneChildrenAmount integer default 0
 		)`,
