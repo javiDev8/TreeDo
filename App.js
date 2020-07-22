@@ -14,9 +14,7 @@ export default class App extends Component {
 		    id integer primary key not null,
 		    parentId integer,
 		    textContent text,
-		    done integer default 0,
-		    childrenAmount integer default 0,
-		    doneChildrenAmount integer default 0
+		    done integer default 0
 		)`,
 		// 'drop table items'
 		// [],
