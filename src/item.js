@@ -6,18 +6,19 @@ import EventBus from 'react-native-event-bus'
 import db from './database'
 import downRecursive from './downRecursive'
 import check from './dbControllers/check'
+import remove from './dbControllers/remove'
 
 export default class Item extends Component {
     state = {
         children: [],
-        showInput: false,
-        newItemTextContent: '',
         childrenAmount: 0,
         doneChildrenAmount: 0,
+        textContent: '',
 
+        showOptions: false,
+        showInput: false,
         open: false,
         done: false,
-        textContent: '',
     }
 
     componentDidMount() {
@@ -36,20 +37,20 @@ export default class Item extends Component {
         EventBus.getInstance().removeListener(this.listener)
     }
 
-    add = () => {
+    add = textContent => {
         db.transaction(tx => {
             tx.executeSql(
                 `insert into items (
 		    parentId,
 		    textContent
 		) values (?,?)`,
-                [this.props.id, this.state.newItemTextContent],
+                [this.props.id, textContent],
                 (_, result) => {
                     this.setState({
                         children: this.state.children.concat({
                             id: result.insertId,
                             parentId: this.props.id,
-                            textContent: this.state.newItemTextContent,
+                            textContent: textContent,
                         }),
                         newItemTextContent: '',
                     }),
@@ -94,17 +95,14 @@ export default class Item extends Component {
             doneChildrenAmount: this.state.done ? 0 : this.state.childrenAmount,
         })
         downRecursive(this.props.id, id => check(id, this.state.done))
-        this.props.setParentChildren(0, this.state.done ? 1 : -1)
-        await this.props.upCheck()
+        if (this.props.parentId > 0) {
+            this.props.setParentChildren(0, this.state.done ? 1 : -1)
+            await this.props.upCheck()
+        }
         this.props.checkOnParentArray(this.props.id)
     }
 
     upCheck = async () => {
-        console.log(
-            `on upCheck, item: ${this.state.textContent},
-	    childrenAmount: ${this.state.childrenAmount},
-	    doneChildrenAmount: ${this.state.doneChildrenAmount}`
-        )
         let previousDoneState = this.state.done
         let allDone =
             this.state.childrenAmount === this.state.doneChildrenAmount &&
@@ -112,10 +110,10 @@ export default class Item extends Component {
         await this.setState({ done: allDone })
         if (this.state.done === previousDoneState || this.props.parentId === 0)
             return
-        console.log('lets recursive on upCheck')
         this.props.setParentChildren(0, this.state.done ? 1 : -1)
         check(this.props.id, this.state.done)
-        this.props.upCheck()
+        await this.props.upCheck()
+        this.props.checkOnParentArray(this.props.id)
     }
 
     setChildren = (childrenUnit, doneChildrenUnit) => {
@@ -124,6 +122,11 @@ export default class Item extends Component {
             doneChildrenAmount:
                 this.state.doneChildrenAmount + doneChildrenUnit,
         })
+    }
+
+    remove = () => {
+        downRecursive(this.props.id, id => remove(id))
+        this.props.removeFromParentArray(this.props.id)
     }
 
     open = () => {
@@ -135,40 +138,71 @@ export default class Item extends Component {
     render() {
         return (
             <View>
-                {this.props.id === 0 ? null : (
+                {this.props.id === 0 ? (
+                    this.state.showInput ? null : (
+                        <TouchableOpacity
+                            onPress={() => this.setState({ showInput: true })}
+                        >
+                            <Text style={{ fontSize: 20 }}>add root Task</Text>
+                        </TouchableOpacity>
+                    )
+                ) : (
                     <Swipeable
                         ref={c => (this.swipeableRef = c)}
-                        renderLeftActions={() => <Text>{'>'}</Text>}
+                        renderLeftActions={() => <Text>{'   '}</Text>}
                         renderRightActions={() => (
                             <TouchableOpacity
                                 onPress={() => console.log('handle options')}
                             >
-                                <Text>O</Text>
+                                <Text>{'   '}</Text>
                             </TouchableOpacity>
                         )}
-                        onSwipeableRightWillOpen={() =>
-                            this.setState({ open: false })
-                        }
+                        onSwipeableRightWillOpen={() => {
+                            this.setState({ showOptions: true, open: false })
+                            this.swipeableRef.close()
+                        }}
                         onSwipeableLeftWillOpen={() => {
                             this.open()
                             this.swipeableRef.close()
                         }}
                     >
                         <View style={{ flexDirection: 'row' }}>
-                            <CheckBox
-                                value={this.state.done}
-                                onValueChange={this.check}
-                            />
-                            <Text>
-                                {(this.state.textContent || null) +
-                                    ` (${this.state.doneChildrenAmount}/${this.state.childrenAmount})`}
+                            {this.props.parentId > 0 ? (
+                                <CheckBox
+                                    value={this.state.done}
+                                    onValueChange={this.check}
+                                />
+                            ) : null}
+                            <Text style={{ fontSize: 20 }}>
+                                {this.state.textContent || null}
                             </Text>
                         </View>
                     </Swipeable>
                 )}
+                {this.state.showOptions ? (
+                    <View style={{ flexDirection: 'row' }}>
+                        <TouchableOpacity
+                            onPress={this.remove}
+                            style={{ marginLeft: 8 }}
+                        >
+                            <Text style={{ fontSize: 20 }}>Delete</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity style={{ marginLeft: 8 }}>
+                            <Text style={{ fontSize: 20 }}>Edit</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                            onPress={() =>
+                                this.setState({ showOptions: false })
+                            }
+                            style={{ marginLeft: 8 }}
+                        >
+                            <Text style={{ fontSize: 20 }}>Cancel</Text>
+                        </TouchableOpacity>
+                    </View>
+                ) : null}
 
                 {this.state.open ? (
-                    <View style={{ paddingLeft: 20 }}>
+                    <View style={{ paddingLeft: this.props.id > 0 ? 20 : 0 }}>
                         {this.state.children
                             .filter(item => !item.done)
                             .map(item => (
@@ -179,27 +213,21 @@ export default class Item extends Component {
                                     parentId={this.props.id}
                                     setParentChildren={this.setChildren}
                                     upCheck={this.upCheck}
-                                    checkOnParentArray={id =>
-                                        this.setState({
-                                            children: this.state.children.map(
-                                                item => {
-                                                    if (item.id === id)
-                                                        item.done = !item.done
-                                                    return item
-                                                }
-                                            ),
-                                        })
-                                    }
+                                    checkOnParentArray={this.checkOnArray}
+                                    removeFromParentArray={this.removeFromArray}
                                 />
                             ))}
 
                         {this.state.showInput ? (
                             <TextInput
+                                style={{ marginLeft: 5, fontSize: 20 }}
                                 value={this.state.newItemTextContent}
                                 onChangeText={val =>
                                     this.setState({ newItemTextContent: val })
                                 }
-                                onSubmitEditing={this.add}
+                                onSubmitEditing={({ nativeEvent }) =>
+                                    this.add(nativeEvent.text)
+                                }
                                 placeholder="add item"
                             />
                         ) : null}
@@ -213,17 +241,8 @@ export default class Item extends Component {
                                     parentId={this.props.id}
                                     setParentChildren={this.setChildren}
                                     upCheck={this.upCheck}
-                                    checkOnParentArray={id =>
-                                        this.setState({
-                                            children: this.state.children.map(
-                                                item => {
-                                                    if (item.id === id)
-                                                        item.done = !item.done
-                                                    return item
-                                                }
-                                            ),
-                                        })
-                                    }
+                                    checkOnParentArray={this.checkOnArray}
+                                    removeFromParentArray={this.removeFromArray}
                                 />
                             ))}
                     </View>
@@ -231,4 +250,17 @@ export default class Item extends Component {
             </View>
         )
     }
+
+    checkOnArray = id =>
+        this.setState({
+            children: this.state.children.map(item => {
+                if (item.id === id) item.done = !item.done
+                return item
+            }),
+        })
+
+    removeFromArray = id =>
+        this.setState({
+            children: this.state.children.filter(item => item.id !== id),
+        })
 }

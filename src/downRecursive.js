@@ -1,7 +1,6 @@
 import db from './database'
 
 export default function downRecursive(id, transaction) {
-    console.log( 'transaction param on downRecursive: ', transaction )
     db.transaction(
         tx => {
             tx.executeSql(
