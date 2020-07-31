@@ -26,10 +26,7 @@ export default class App extends Component {
 
     render() {
         return (
-            <View style={{ padding: 15 }}>
-                <Text style={{ fontSize: 40, alignSelf: 'center' }}>
-                    TreeDo
-                </Text>
+            <View style={{ padding: 15, paddingTop: 50 }}>
                 <ScrollView style={{ paddingRight: 20 }}>
                     <Item id={0} data={{ open: true }} />
                     <View style={{ height: 100 }} />

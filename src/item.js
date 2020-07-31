@@ -1,5 +1,12 @@
 import React, { Component } from 'react'
-import { TextInput, CheckBox, Text, View, TouchableOpacity } from 'react-native'
+import {
+    TextInput,
+    CheckBox,
+    Text,
+    View,
+    TouchableOpacity,
+    Pressable,
+} from 'react-native'
 import Swipeable from 'react-native-gesture-handler/Swipeable'
 import EventBus from 'react-native-event-bus'
 
@@ -7,6 +14,8 @@ import db from './database'
 import downRecursive from './downRecursive'
 import check from './dbControllers/check'
 import remove from './dbControllers/remove'
+import insert from './dbControllers/insert'
+import update from './dbControllers/update'
 
 export default class Item extends Component {
     state = {
@@ -15,6 +24,7 @@ export default class Item extends Component {
         doneChildrenAmount: 0,
         textContent: '',
 
+        editing: false,
         showOptions: false,
         showInput: false,
         open: false,
@@ -37,34 +47,29 @@ export default class Item extends Component {
         EventBus.getInstance().removeListener(this.listener)
     }
 
-    add = textContent => {
-        db.transaction(tx => {
-            tx.executeSql(
-                `insert into items (
-		    parentId,
-		    textContent
-		) values (?,?)`,
-                [this.props.id, textContent],
-                (_, result) => {
-                    this.setState({
-                        children: this.state.children.concat({
-                            id: result.insertId,
-                            parentId: this.props.id,
-                            textContent: textContent,
-                        }),
-                        newItemTextContent: '',
-                    }),
-                        this.setChildren(1, 0)
-                    if (this.props.parentId > 0) this.upCheck()
-                },
-                (_, error) => console.log('error on insert: ', error)
-            )
+    add = textContent =>
+        insert(this.props.id, textContent).then(insertId => {
+            this.setState({
+                children: this.state.children.concat({
+                    id: insertId,
+                    parentId: this.props.parentId,
+                    textContent: textContent,
+                }),
+            })
+            this.inputRef.clear()
+            this.setChildren(1, 0)
+            if (this.props.parentId > 0) this.upCheck()
         })
-    }
 
     remove = () => {
         downRecursive(this.props.id, 'delete from items where id = ?')
         this.props.updateParent()
+    }
+
+    update = () => {
+        console.log('on this.update')
+        update(this.props.id, this.state.textContent)
+        this.setState({ editing: false })
     }
 
     fetchChildren = () => {
@@ -116,17 +121,18 @@ export default class Item extends Component {
         this.props.checkOnParentArray(this.props.id)
     }
 
-    setChildren = (childrenUnit, doneChildrenUnit) => {
+    setChildren = (childrenUnit, doneChildrenUnit) =>
         this.setState({
             childrenAmount: this.state.childrenAmount + childrenUnit,
             doneChildrenAmount:
                 this.state.doneChildrenAmount + doneChildrenUnit,
         })
-    }
 
-    remove = () => {
+    remove = async () => {
         downRecursive(this.props.id, id => remove(id))
         this.props.removeFromParentArray(this.props.id)
+        await this.props.setParentChildren(-1, this.state.done ? -1 : 0)
+        this.props.upCheck()
     }
 
     open = () => {
@@ -143,22 +149,18 @@ export default class Item extends Component {
                         <TouchableOpacity
                             onPress={() => this.setState({ showInput: true })}
                         >
-                            <Text style={{ fontSize: 20 }}>add root Task</Text>
+                            <Text style={{ fontSize: 20, marginBottom: 15 }}>
+                                add list
+                            </Text>
                         </TouchableOpacity>
                     )
                 ) : (
                     <Swipeable
                         ref={c => (this.swipeableRef = c)}
                         renderLeftActions={() => <Text>{'   '}</Text>}
-                        renderRightActions={() => (
-                            <TouchableOpacity
-                                onPress={() => console.log('handle options')}
-                            >
-                                <Text>{'   '}</Text>
-                            </TouchableOpacity>
-                        )}
+                        renderRightActions={() => <Text>{'   '}</Text>}
                         onSwipeableRightWillOpen={() => {
-                            this.setState({ showOptions: true, open: false })
+                            this.setState({ open: false })
                             this.swipeableRef.close()
                         }}
                         onSwipeableLeftWillOpen={() => {
@@ -166,17 +168,47 @@ export default class Item extends Component {
                             this.swipeableRef.close()
                         }}
                     >
-                        <View style={{ flexDirection: 'row' }}>
+                        <Pressable
+                            onLongPress={() =>
+                                this.setState({ showOptions: true })
+                            }
+                            delayLongPress={200}
+                            style={{ flexDirection: 'row' }}
+                        >
                             {this.props.parentId > 0 ? (
                                 <CheckBox
                                     value={this.state.done}
                                     onValueChange={this.check}
                                 />
                             ) : null}
-                            <Text style={{ fontSize: 20 }}>
-                                {this.state.textContent || null}
-                            </Text>
-                        </View>
+                            {this.state.editing ? (
+                                <TextInput
+                                    multiline={true}
+                                    style={{ fontSize: 20 }}
+                                    autoFocus={true}
+                                    value={this.state.textContent}
+                                    onChangeText={val =>
+                                        this.setState({ textContent: val })
+                                    }
+                                    onSubmitEditing={this.update}
+                                />
+                            ) : (
+                                <Text
+                                    style={
+                                        this.state.done
+                                            ? {
+                                                  fontSize: 20,
+                                                  textDecorationLine:
+                                                      'line-through',
+                                                  fontStyle: 'italic',
+                                              }
+                                            : { fontSize: 20 }
+                                    }
+                                >
+                                    {this.state.textContent || null}
+                                </Text>
+                            )}
+                        </Pressable>
                     </Swipeable>
                 )}
                 {this.state.showOptions ? (
@@ -187,7 +219,10 @@ export default class Item extends Component {
                         >
                             <Text style={{ fontSize: 20 }}>Delete</Text>
                         </TouchableOpacity>
-                        <TouchableOpacity style={{ marginLeft: 8 }}>
+                        <TouchableOpacity
+                            onPress={() => this.setState({ editing: true })}
+                            style={{ marginLeft: 8 }}
+                        >
                             <Text style={{ fontSize: 20 }}>Edit</Text>
                         </TouchableOpacity>
                         <TouchableOpacity
@@ -220,11 +255,9 @@ export default class Item extends Component {
 
                         {this.state.showInput ? (
                             <TextInput
+                                multiline={false}
+                                ref={c => (this.inputRef = c)}
                                 style={{ marginLeft: 5, fontSize: 20 }}
-                                value={this.state.newItemTextContent}
-                                onChangeText={val =>
-                                    this.setState({ newItemTextContent: val })
-                                }
                                 onSubmitEditing={({ nativeEvent }) =>
                                     this.add(nativeEvent.text)
                                 }
