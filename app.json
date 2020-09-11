@@ -19,7 +19,7 @@
         },
         "android": {
             "package": "treeDo.TreeDo",
-            "versionCode": 2
+            "versionCode": 3
         },
         "web": {
             "favicon": "./assets/favicon.png"
